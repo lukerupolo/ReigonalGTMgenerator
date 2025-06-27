@@ -11,7 +11,7 @@ from xml.etree.ElementTree import fromstring, tostring
 # --- Page Configuration ---
 st.set_page_config(
     page_title="DreamAI Setups",
-    page_icon="�",
+    page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -25,7 +25,12 @@ def copy_slide_from_source(dest_pres, src_slide):
     """
     # Create a new blank slide in the destination presentation using the same layout
     # as the source slide. This sets up the basic structure.
-    slide_layout = dest_pres.slide_layouts.get_by_name(src_slide.slide_layout.name)
+    try:
+        slide_layout = dest_pres.slide_layouts.get_by_name(src_slide.slide_layout.name)
+    except KeyError:
+        # Fallback to a standard 'Title and Content' layout if not found
+        slide_layout = dest_pres.slide_layouts[1]
+        
     new_slide = dest_pres.slides.add_slide(slide_layout)
 
     # The core of the copy operation: duplicate shapes from source to destination
@@ -160,6 +165,7 @@ def create_gtm_presentation(data):
             p = tf.add_paragraph(); p.text = f"- {key.replace('_', ' ').title()}: {value}"; p.level = 1
     else:
         p = tf.add_paragraph(); p.text = "No research data generated."; p.level = 1
+    tf.add_paragraph() # Add a space
     p = tf.add_paragraph(); p.text = "Custom Regional Insights:"; p.level = 0
     p = tf.add_paragraph(); p.text = data.get('custom_insights', 'Not provided.'); p.level = 1
     
@@ -314,7 +320,7 @@ if st.session_state.step == 2:
         st.error("Could not fetch AI-powered insights. Please check your API key and try again.")
     st.subheader("Custom Regional Insights")
     custom_insights = st.text_area("Add your own qualitative findings:", height=200, key="custom_insight_input")
-    col1, col2, col3 = st.columns([1,1,1]);
+    col1, col2, col3 = st.columns([1,1,1])
     with col1: st.button("← Back: Objectives", on_click=prev_step, use_container_width=True)
     with col3:
         if st.button("Save & Next: Timeline →", type="primary", use_container_width=True):
@@ -364,7 +370,7 @@ if st.session_state.step == 4:
     col_back, col_mid, col_next = st.columns([1,1,1])
     with col_back: st.button("← Back: Timeline", on_click=prev_step, use_container_width=True)
     with col_next:
-        if st.button("Save & Next: Investment →", type="primary", use_container_width=True):
+        if st.button("Save & Next: Investment & Export →", type="primary", use_container_width=True):
             st.session_state.project_data['activation_insights_summary'] = insights_summary
             st.session_state.project_data['activation_plan'] = activation_plan
             st.session_state.project_data['measurement_plan'] = measurement_plan
@@ -409,4 +415,3 @@ if st.session_state.step == 5:
 
     col_back, col_mid = st.columns([1,1])
     with col_back: st.button("← Back: Activations", on_click=prev_step, use_container_width=True)
-�
