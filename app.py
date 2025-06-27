@@ -102,7 +102,7 @@ def get_ai_summary(text_to_summarize, api_key):
     """
     st.info("🤖 Calling OpenAI API for summarization...")
     
-    prompt = f"Summarize the following text in one or two sentences, capturing the key takeaway: '{text_to_summarize}'"
+    prompt = f"Summarize the following market research data in one or two sentences, capturing the most critical takeaway for a marketing team: '{text_to_summarize}'"
     
     payload = {
         "model": "gpt-3.5-turbo",
@@ -355,7 +355,11 @@ if st.session_state.step == 4:
     with col1:
         st.subheader("Insights Summary")
         with st.spinner("AI is summarizing..."):
-            insights_summary = get_ai_summary(st.session_state.project_data.get('custom_insights', ''), st.session_state.api_key)
+            # ---MODIFIED LOGIC---
+            # The summarizer now uses the API-generated insights from Step 2.
+            insights_to_summarize = st.session_state.project_data.get('api_insights', {})
+            insights_text = json.dumps(insights_to_summarize) # Convert JSON to a string for the API
+            insights_summary = get_ai_summary(insights_text, st.session_state.api_key)
         st.info(insights_summary)
     with col2:
         st.subheader("Activation Plan")
