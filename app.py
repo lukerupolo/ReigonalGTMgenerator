@@ -6,7 +6,7 @@ from pptx.util import Inches
 import io
 import json
 import requests # Used for making API calls
-from xml.etree.ElementTree import fromstring, tostring
+from lxml import etree # Correct XML library for python-pptx
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -23,6 +23,9 @@ def copy_slide_from_source(dest_pres, src_slide):
     Copies a slide from a source presentation to the destination presentation.
     This function performs a deep copy of the slide's underlying XML.
     """
+    # ---FIXED LOGIC---
+    # This function now uses lxml.etree to be compatible with python-pptx
+    
     # Create a new blank slide in the destination presentation using the same layout
     # as the source slide. This sets up the basic structure.
     try:
@@ -37,7 +40,7 @@ def copy_slide_from_source(dest_pres, src_slide):
     for shape in src_slide.shapes:
         # Create a new element from the source shape's XML
         el = shape.element
-        new_el = fromstring(tostring(el))
+        new_el = etree.fromstring(etree.tostring(el))
         
         # Add the duplicated element to the new slide's shape tree
         new_slide.shapes._spTree.insert_element_before(new_el, 'p:extLst')
@@ -355,8 +358,6 @@ if st.session_state.step == 4:
     with col1:
         st.subheader("Insights Summary")
         with st.spinner("AI is summarizing..."):
-            # ---MODIFIED LOGIC---
-            # The summarizer now uses the API-generated insights from Step 2.
             insights_to_summarize = st.session_state.project_data.get('api_insights', {})
             insights_text = json.dumps(insights_to_summarize) # Convert JSON to a string for the API
             insights_summary = get_ai_summary(insights_text, st.session_state.api_key)
