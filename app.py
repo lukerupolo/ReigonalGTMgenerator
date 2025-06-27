@@ -44,16 +44,19 @@ def copy_slide_from_source(dest_pres, src_slide):
 
 # --- LIVE API FUNCTIONS ---
 
-def call_gemini_api(payload, api_key):
+def call_openai_api(payload, api_key):
     """
-    Generic function to call the Google Gemini API.
+    Generic function to call the OpenAI Chat Completions API.
     """
     if not api_key:
-        st.error("API Key not found. Please enter your API key in the sidebar.")
+        st.error("API Key not found. Please enter your OpenAI API key in the sidebar.")
         return None
 
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
-    headers = {'Content-Type': 'application/json'}
+    api_url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {api_key}'
+    }
     
     try:
         response = requests.post(api_url, headers=headers, json=payload)
@@ -70,33 +73,23 @@ def call_gemini_api(payload, api_key):
 
 def get_deep_research(region, api_key):
     """
-    Calls the Gemini API to get structured market research data.
+    Calls the OpenAI API to get structured market research data.
     """
-    st.info(f"🤖 Calling Generative AI for Deep Research on {region}...")
+    st.info(f"🤖 Calling OpenAI API for Deep Research on {region}...")
     
-    prompt = f"Provide a market analysis for the tech industry in {region}. Give me a JSON object with the following keys: 'market_size', 'key_trends' (as a list of strings), 'consumer_behavior', and 'competitor_landscape' (as a list of strings)."
+    prompt = f"You are a market research analyst. Provide a market analysis for the tech industry in {region}. Return ONLY a valid JSON object with the following keys: 'market_size', 'key_trends' (as a list of strings), 'consumer_behavior', and 'competitor_landscape' (as a list of strings)."
     
     payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "response_mime_type": "application/json",
-            "response_schema": {
-                "type": "OBJECT",
-                "properties": {
-                    "market_size": {"type": "STRING"},
-                    "key_trends": {"type": "ARRAY", "items": {"type": "STRING"}},
-                    "consumer_behavior": {"type": "STRING"},
-                    "competitor_landscape": {"type": "ARRAY", "items": {"type": "STRING"}}
-                }
-            }
-        }
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": prompt}],
+        "response_format": {"type": "json_object"}
     }
     
-    result = call_gemini_api(payload, api_key)
+    result = call_openai_api(payload, api_key)
     
-    if result and 'candidates' in result:
+    if result and 'choices' in result:
         try:
-            json_text = result['candidates'][0]['content']['parts'][0]['text']
+            json_text = result['choices'][0]['message']['content']
             return json.loads(json_text)
         except (KeyError, IndexError, json.JSONDecodeError) as e:
             st.error(f"Failed to parse research data from API response: {e}")
@@ -105,18 +98,21 @@ def get_deep_research(region, api_key):
 
 def get_ai_summary(text_to_summarize, api_key):
     """
-    Calls the Gemini API to get a text summary.
+    Calls the OpenAI API to get a text summary.
     """
-    st.info("🤖 Calling Generative AI for summarization...")
+    st.info("🤖 Calling OpenAI API for summarization...")
     
     prompt = f"Summarize the following text in one or two sentences, capturing the key takeaway: '{text_to_summarize}'"
     
-    payload = {"contents": [{"role": "user", "parts": [{"text": prompt}]}]}
-    result = call_gemini_api(payload, api_key)
+    payload = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": prompt}]
+    }
+    result = call_openai_api(payload, api_key)
     
-    if result and 'candidates' in result:
+    if result and 'choices' in result:
         try:
-            return result['candidates'][0]['content']['parts'][0]['text']
+            return result['choices'][0]['message']['content']
         except (KeyError, IndexError) as e:
             st.error(f"Failed to parse summary from API response: {e}")
             return "Summary could not be generated."
@@ -237,7 +233,7 @@ def prev_step(): st.session_state.step -= 1
 st.sidebar.title("DreamAI Setups 🤖")
 st.sidebar.markdown("---")
 st.sidebar.header("Configuration")
-api_key_input = st.sidebar.text_input("Enter Your Google AI API Key", type="password", key="api_key_input_widget")
+api_key_input = st.sidebar.text_input("Enter Your OpenAI API Key", type="password", key="api_key_input_widget")
 if api_key_input:
     st.session_state.api_key = api_key_input
 st.sidebar.markdown("---")
@@ -249,7 +245,7 @@ if st.session_state.step == 0:
     st.markdown("Automate the creation of regional GTM slide decks. Start by uploading your global GTM presentation.")
     
     if not st.session_state.api_key:
-        st.warning("Please enter your Google AI API Key in the sidebar to begin.")
+        st.warning("Please enter your OpenAI API Key in the sidebar to begin.")
 
     project_name = st.text_input("Enter a Project Name:", key="project_name_input")
     region = st.selectbox("Select Target Region:", ["Australia", "Japan", "Korea", "China"], key="region_input")
