@@ -6,21 +6,36 @@ from pptx.util import Inches
 import io
 import json
 import requests # Used for making API calls
+from xml.etree.ElementTree import fromstring, tostring
 
 # --- Page Configuration ---
 st.set_page_config(
     page_title="DreamAI Setups",
-    page_icon="🤖",
+    page_icon="�",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# --- App Styling ---
-def local_css(file_name):
-    with open(file_name) as f:
-        st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+# --- HELPER FUNCTION FOR SLIDE COPYING ---
 
-# local_css("style.css") # Placeholder for custom CSS
+def copy_slide_from_source(dest_pres, src_slide):
+    """
+    Copies a slide from a source presentation to the destination presentation.
+    This function performs a deep copy of the slide's underlying XML.
+    """
+    # Create a new blank slide in the destination presentation using the same layout
+    # as the source slide. This sets up the basic structure.
+    slide_layout = dest_pres.slide_layouts.get_by_name(src_slide.slide_layout.name)
+    new_slide = dest_pres.slides.add_slide(slide_layout)
+
+    # The core of the copy operation: duplicate shapes from source to destination
+    for shape in src_slide.shapes:
+        # Create a new element from the source shape's XML
+        el = shape.element
+        new_el = fromstring(tostring(el))
+        
+        # Add the duplicated element to the new slide's shape tree
+        new_slide.shapes._spTree.insert_element_before(new_el, 'p:extLst')
 
 # --- LIVE API FUNCTIONS ---
 
@@ -42,7 +57,6 @@ def call_gemini_api(payload, api_key):
     except requests.exceptions.RequestException as e:
         st.error(f"API Request Failed: {e}")
         try:
-            # Try to get more specific error from API response
             error_details = e.response.json()
             st.error(f"API Error Details: {error_details.get('error', {}).get('message', 'No details')}")
         except:
@@ -109,74 +123,58 @@ def create_gtm_presentation(data):
     Creates the final PowerPoint presentation based on user input.
     """
     prs = Presentation()
-    
-    # Use a simple title slide layout
-    title_slide_layout = prs.slide_layouts[0]
+    source_pres = data.get('source_presentation')
+    objective_indices = data.get('objective_slide_indices', [])
     
     # --- Title Slide ---
+    title_slide_layout = prs.slide_layouts[0]
     slide = prs.slides.add_slide(title_slide_layout)
     title = slide.shapes.title
     subtitle = slide.placeholders[1]
     title.text = f"GTM Strategy: {data['project_name']}"
     subtitle.text = f"Prepared for {data['region']}"
 
+    # --- Copy Objective Slides ---
+    if not objective_indices:
+        st.warning("Could not automatically identify an 'Objective' slide. A placeholder slide will be added.")
+        slide = prs.slides.add_slide(prs.slide_layouts[1])
+        slide.shapes.title.text = "Objectives"
+        slide.placeholders[1].text_frame.text = "Objective slide from global deck could not be identified."
+    else:
+        st.info(f"Copying {len(objective_indices)} objective slide(s)...")
+        for idx in objective_indices:
+            src_slide = source_pres.slides[idx]
+            copy_slide_from_source(prs, src_slide)
+
     # Use a title and content layout for subsequent slides
     content_slide_layout = prs.slide_layouts[1]
-    
-    # --- Objectives Slide ---
-    slide = prs.slides.add_slide(content_slide_layout)
-    slide.shapes.title.text = "Regional Objectives"
-    body_shape = slide.shapes.placeholders[1]
-    tf = body_shape.text_frame
-    tf.text = "Global Objectives Alignment:\n"
-    p = tf.add_paragraph()
-    p.text = data.get('global_objectives', 'Not found.')
-    p.level = 1
-    tf.add_paragraph() # Spacer
-    tf.add_paragraph().text = "Regional Alignments & Additions:"
-    p = tf.add_paragraph()
-    p.text = data.get('regional_objectives', 'Not provided.')
-    p.level = 1
     
     # --- Market Insights Slide ---
     slide = prs.slides.add_slide(content_slide_layout)
     slide.shapes.title.text = f"Market Insights: {data['region']}"
-    body_shape = slide.shapes.placeholders[1]
-    tf = body_shape.text_frame
+    tf = slide.placeholders[1].text_frame
     tf.text = "Automated Deep Research Insights:"
     api_insights_data = data.get('api_insights', {})
     if api_insights_data:
         for key, value in api_insights_data.items():
-            p = tf.add_paragraph()
-            p.text = f"- {key.replace('_', ' ').title()}: {value}"
-            p.level = 1
+            p = tf.add_paragraph(); p.text = f"- {key.replace('_', ' ').title()}: {value}"; p.level = 1
     else:
-        p = tf.add_paragraph()
-        p.text = "No research data generated."
-        p.level = 1
-        
-    tf.add_paragraph() # Spacer
-    p = tf.add_paragraph()
-    p.text = "Custom Regional Insights:"
-    p = tf.add_paragraph()
-    p.text = data.get('custom_insights', 'Not provided.')
-    p.level = 1
+        p = tf.add_paragraph(); p.text = "No research data generated."; p.level = 1
+    p = tf.add_paragraph(); p.text = "Custom Regional Insights:"; p.level = 0
+    p = tf.add_paragraph(); p.text = data.get('custom_insights', 'Not provided.'); p.level = 1
     
     # --- Timeline Slide ---
     slide = prs.slides.add_slide(content_slide_layout)
     slide.shapes.title.text = "Project Timeline"
-    body_shape = slide.shapes.placeholders[1]
-    tf = body_shape.text_frame
+    tf = slide.placeholders[1].text_frame
     tf.clear()
     for item in data.get('timeline', []):
-        p = tf.add_paragraph()
-        p.text = item
+        p = tf.add_paragraph(); p.text = item
     
     # --- Activation Slide ---
     slide = prs.slides.add_slide(prs.slide_layouts[5]) # Title Only Layout
     slide.shapes.title.text = "Regional Activation Plan"
     
-    # Add three text boxes for the layout
     left, top, width, height = Inches(0.5), Inches(1.5), Inches(3.0), Inches(5.0)
     txBox = slide.shapes.add_textbox(left, top, width, height); tf = txBox.text_frame
     p = tf.add_paragraph(); p.text = "Insights Summary"; p.font.bold = True
@@ -196,7 +194,6 @@ def create_gtm_presentation(data):
     slide = prs.slides.add_slide(content_slide_layout)
     slide.shapes.title.text = "Investment Summary"
     body_shape = slide.shapes.placeholders[1]
-    
     try:
         investment_data = data.get('investment_data', [])
         if investment_data:
@@ -209,14 +206,12 @@ def create_gtm_presentation(data):
         else:
             body_shape.text_frame.text = "No investment data provided."
     except Exception as e:
-        body_shape.text_frame.text = f"Could not generate investment table. Please check format.\nError: {e}"
+        body_shape.text_frame.text = f"Could not generate investment table. Error: {e}"
 
     # --- Overview Slide ---
     slide = prs.slides.add_slide(content_slide_layout)
     slide.shapes.title.text = "AI-Generated Overview"
-    body_shape = slide.shapes.placeholders[1]
-    tf = body_shape.text_frame
-    tf.text = data.get('overview_summary', 'Not generated.')
+    slide.placeholders[1].text_frame.text = data.get('overview_summary', 'Not generated.')
     
     ppt_io = io.BytesIO()
     prs.save(ppt_io)
@@ -257,11 +252,25 @@ if st.session_state.step == 0:
     if st.button("Start Analysis & Build", type="primary", disabled=not st.session_state.api_key):
         if uploaded_file and project_name and region:
             with st.spinner('Analyzing Presentation... This may take a moment.'):
-                st.session_state.project_data['project_name'] = project_name
-                st.session_state.project_data['region'] = region
-                # For this example, we still mock the content parsing part.
-                st.session_state.project_data['global_objectives'] = "Increase market share by 15% globally.\nLaunch Product X in 10 new markets.\nAchieve a 20% growth in online sales."
-                st.session_state.project_data['global_timeline_points'] = ["Q1: Global Kick-off", "Q2: Product Finalization", "Q3: Marketing Campaign Launch", "Q4: Sales Push"]
+                source_pres = Presentation(uploaded_file)
+                
+                # Identify objective slides and extract their text content and index
+                objective_slide_indices = []
+                objective_texts = []
+                for i, slide in enumerate(source_pres.slides):
+                    if slide.shapes.title and "objective" in slide.shapes.title.text.lower():
+                        objective_slide_indices.append(i)
+                        full_text = "\n".join(shape.text for shape in slide.shapes if shape.has_text_frame)
+                        objective_texts.append(full_text)
+                
+                st.session_state.project_data = {
+                    'project_name': project_name,
+                    'region': region,
+                    'source_presentation': source_pres,
+                    'objective_slide_indices': objective_slide_indices,
+                    'objective_texts': "\n---\n".join(objective_texts)
+                }
+                
                 next_step()
                 st.rerun()
         else:
@@ -273,7 +282,7 @@ if st.session_state.step > 0:
     st.sidebar.markdown(f"**Region:** {st.session_state.project_data.get('region', 'N/A')}")
     st.sidebar.markdown("---")
     
-    progress_value = st.session_state.step / 6
+    progress_value = st.session_state.step / 5 # Updated step count
     st.progress(progress_value)
 
     if st.sidebar.button("↩️ Start Over"):
@@ -282,19 +291,16 @@ if st.session_state.step > 0:
         st.rerun()
     st.sidebar.markdown("---")
 
-# --- Step 1: Objectives Alignment ---
+# --- Step 1: Objectives Review ---
 if st.session_state.step == 1:
-    st.header("Step 1: Objectives Alignment")
+    st.header("Step 1: Objectives Review")
     st.subheader("Global Objectives Extracted")
-    st.markdown("The following objectives were extracted from the global deck.")
-    st.text_area("Global Objectives", value=st.session_state.project_data['global_objectives'], height=150, disabled=True)
-    st.subheader("Regional Objectives Questionnaire")
-    st.markdown("Confirm and adapt these objectives for your region. Add any region-specific goals.")
-    regional_objectives = st.text_area("Enter your specific regional objectives:", height=200, key="regional_obj_input")
-    if st.button("Save & Next: Insights →", type="primary", use_container_width=True):
-        st.session_state.project_data['regional_objectives'] = regional_objectives
-        next_step()
-        st.rerun()
+    st.markdown("The following objectives slide(s) were found in the global deck and will be copied exactly into your new presentation.")
+    
+    extracted_text = st.session_state.project_data.get('objective_texts', 'No objective slide was found.')
+    st.text_area("Extracted Text", value=extracted_text, height=250, disabled=True)
+    
+    st.button("Next: Insights →", type="primary", use_container_width=True, on_click=next_step)
 
 # --- Step 2: Regional Insight Generation ---
 if st.session_state.step == 2:
@@ -303,13 +309,11 @@ if st.session_state.step == 2:
         api_insights = get_deep_research(st.session_state.project_data['region'], st.session_state.api_key)
     if api_insights:
         st.subheader("Automated Deep Research")
-        st.markdown("The AI has pulled the following market data.")
         st.json(api_insights)
     else:
         st.error("Could not fetch AI-powered insights. Please check your API key and try again.")
     st.subheader("Custom Regional Insights")
-    st.markdown("Add your own qualitative findings, customer feedback, or specific market knowledge.")
-    custom_insights = st.text_area("Add your custom insights here:", height=200, key="custom_insight_input")
+    custom_insights = st.text_area("Add your own qualitative findings:", height=200, key="custom_insight_input")
     col1, col2, col3 = st.columns([1,1,1]);
     with col1: st.button("← Back: Objectives", on_click=prev_step, use_container_width=True)
     with col3:
@@ -322,8 +326,7 @@ if st.session_state.step == 2:
 # --- Step 3: Timeline Customization ---
 if st.session_state.step == 3:
     st.header("Step 3: Timeline Customization")
-    st.markdown("The global timeline has been imported. Add your region-specific activations and milestones.")
-    timeline_items = st.session_state.project_data['global_timeline_points'].copy()
+    st.markdown("Add your region-specific activations and milestones.")
     if 'regional_events' not in st.session_state.project_data:
         st.session_state.project_data['regional_events'] = []
     st.subheader("Add Regional Timeline Events")
@@ -333,21 +336,19 @@ if st.session_state.step == 3:
         if new_event:
             st.session_state.project_data['regional_events'].append(new_event)
             st.rerun()
-    final_timeline = timeline_items + st.session_state.project_data['regional_events']
-    st.subheader("Preview of Final Timeline")
-    st.expander("Click to see the combined timeline").write(final_timeline)
+
     col1, col2, col3 = st.columns([1,1,1])
     with col1: st.button("← Back: Insights", on_click=prev_step, use_container_width=True)
     with col3:
         if st.button("Save & Next: Activations →", type="primary", use_container_width=True):
-            st.session_state.project_data['timeline'] = final_timeline
+            st.session_state.project_data['timeline'] = st.session_state.project_data['regional_events']
             next_step()
             st.rerun()
 
 # --- Step 4: Activation Planning ---
 if st.session_state.step == 4:
     st.header("Step 4: Activation Planning")
-    st.markdown("Plan your regional activation on a single slide. The AI will summarize the insights for you.")
+    st.markdown("Plan your regional activation on a single slide.")
     col1, col2, col3 = st.columns(3)
     with col1:
         st.subheader("Insights Summary")
@@ -370,12 +371,14 @@ if st.session_state.step == 4:
             next_step()
             st.rerun()
 
-# --- Step 5: Investment Summary ---
+# --- Step 5: Final Review & Export ---
 if st.session_state.step == 5:
-    st.header("Step 5: Investment Summary")
+    st.header("Step 5: Final Review & Export")
+    st.balloons()
+    st.subheader("Investment Summary")
     st.markdown("Provide the regional investment details in CSV format.")
-    st.info("Paste budget data below. The first line should be headers.\nExample:\nCategory,Q1 Budget,Q2 Budget\nMedia Spend,$50000,$75000")
-    investment_data_str = st.text_area("Paste budget data here (CSV format):", height=200, key="investment_input")
+    st.info("Paste budget data below. First line must be headers.\nExample:\nCategory,Q1 Budget,Q2 Budget\nMedia Spend,$50000,$75000")
+    investment_data_str = st.text_area("Paste budget data here (CSV format):", height=150, key="investment_input")
     investment_data = []
     if investment_data_str:
         lines = investment_data_str.strip().split('\n')
@@ -385,35 +388,25 @@ if st.session_state.step == 5:
                 for line in lines[1:]:
                     values = [v.strip() for v in line.split(',')]
                     if len(values) == len(headers): investment_data.append(dict(zip(headers, values)))
-            except Exception: st.warning("Could not parse data. Please check CSV format.")
-    st.subheader("Investment Data Preview")
+            except Exception: st.warning("Could not parse data. Check CSV format.")
     if investment_data: st.dataframe(pd.DataFrame(investment_data))
-    else: st.warning("No valid data entered yet.")
-    col_back, col_mid, col_next = st.columns([1,1,1])
-    with col_back: st.button("← Back: Activations", on_click=prev_step, use_container_width=True)
-    with col_next:
-        if st.button("Save & Next: Overview →", type="primary", use_container_width=True):
-            st.session_state.project_data['investment_data'] = investment_data
-            next_step()
-            st.rerun()
-
-# --- Step 6: AI-Powered Overview & Export ---
-if st.session_state.step == 6:
-    st.header("Step 6: Final Review & Export")
-    st.balloons()
+    
     st.subheader("AI-Generated Overview")
-    st.markdown("The AI has created a summary based on all the information you provided.")
-    full_text = f"Project: {st.session_state.project_data.get('project_name')}\nRegion: {st.session_state.project_data.get('region')}\nObjectives: {st.session_state.project_data.get('regional_objectives')}\nActivations: {st.session_state.project_data.get('activation_plan')}\nMeasurement: {st.session_state.project_data.get('measurement_plan')}"
+    full_text = f"Project: {st.session_state.project_data.get('project_name')}\nRegion: {st.session_state.project_data.get('region')}\nActivations: {st.session_state.project_data.get('activation_plan')}\nMeasurement: {st.session_state.project_data.get('measurement_plan')}"
     with st.spinner("AI is generating the final overview..."):
         overview_summary = get_ai_summary(full_text, st.session_state.api_key)
-    st.text_area("Overview Summary", value=overview_summary, height=200, disabled=True)
-    st.session_state.project_data['overview_summary'] = overview_summary
-    st.subheader("Export Your Presentation")
-    st.markdown("Your regional GTM deck is ready to download.")
-    try:
-        ppt_file = create_gtm_presentation(st.session_state.project_data)
-        st.download_button(label="📥 Download PowerPoint (.pptx)", data=ppt_file, file_name=f"{st.session_state.project_data['project_name']}_Regional_GTM.pptx", mime="application/vnd.openxmlformats-officedocument.presentationml.presentation", use_container_width=True)
-    except Exception as e:
-        st.error(f"An error occurred while generating the presentation: {e}")
+    st.text_area("Overview Summary", value=overview_summary, height=150, disabled=True)
+    
+    if st.button("Generate & Download Presentation", type="primary", use_container_width=True):
+        st.session_state.project_data['investment_data'] = investment_data
+        st.session_state.project_data['overview_summary'] = overview_summary
+        try:
+            with st.spinner("Building your PowerPoint file..."):
+                ppt_file = create_gtm_presentation(st.session_state.project_data)
+            st.download_button(label="✅ Download PowerPoint (.pptx)", data=ppt_file, file_name=f"{st.session_state.project_data['project_name']}_Regional_GTM.pptx", mime="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+        except Exception as e:
+            st.error(f"An error occurred while generating the presentation: {e}")
+
     col_back, col_mid = st.columns([1,1])
-    with col_back: st.button("← Back: Investment", on_click=prev_step, use_container_width=True)
+    with col_back: st.button("← Back: Activations", on_click=prev_step, use_container_width=True)
+�
