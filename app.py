@@ -278,7 +278,12 @@ if st.session_state.step > 0:
     progress_value = st.session_state.step / 6
     st.progress(progress_value)
 
-    st.sidebar.page_link("app.py", label="↩️ Start Over", icon="🏠")
+    # ---FIXED LINE---
+    # Replaced st.page_link with st.button to reset the state in a single-page app context.
+    if st.sidebar.button("↩️ Start Over"):
+        st.session_state.step = 0
+        st.session_state.project_data = {}
+        st.rerun()
     st.sidebar.markdown("---")
 
 
@@ -412,11 +417,15 @@ if st.session_state.step == 5:
     if investment_data_str:
         lines = investment_data_str.strip().split('\n')
         if len(lines) > 1:
-            headers = lines[0].split(',')
-            for line in lines[1:]:
-                values = line.split(',')
-                if len(values) == len(headers):
-                    investment_data.append(dict(zip(headers, values)))
+            try:
+                headers = lines[0].split(',')
+                for line in lines[1:]:
+                    values = line.split(',')
+                    if len(values) == len(headers):
+                        investment_data.append(dict(zip(headers, values)))
+            except Exception:
+                st.warning("Could not parse data. Please ensure it is in valid CSV format.")
+
 
     st.subheader("Investment Data Preview")
     if investment_data:
