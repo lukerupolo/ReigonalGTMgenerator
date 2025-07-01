@@ -118,6 +118,69 @@ def get_ai_summary(text_to_summarize, api_key):
             return "Summary could not be generated."
     return "Summary could not be generated."
 
+def classify_sentiment(comment, api_key):
+    """
+    Classifies the sentiment of a comment using OpenAI API.
+    Returns 'positive', 'negative', or 'neutral'.
+    """
+    if not api_key:
+        return "neutral"  # fallback when no API key
+    
+    prompt = f"Classify the sentiment of the following comment as 'positive', 'negative', or 'neutral'. Return only the sentiment word: '{comment}'"
+    
+    payload = {
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": prompt}]
+    }
+    result = call_openai_api(payload, api_key)
+    
+    if result and 'choices' in result:
+        try:
+            sentiment = result['choices'][0]['message']['content'].strip().lower()
+            if sentiment in ['positive', 'negative', 'neutral']:
+                return sentiment
+            else:
+                return "neutral"  # fallback for unexpected responses
+        except (KeyError, IndexError):
+            return "neutral"
+    return "neutral"
+
+def classify_topics(comment, topics, api_key):
+    """
+    Classifies a comment into zero or more topics using OpenAI API or keyword matching.
+    Returns a comma-separated string of matching topics or 'None'.
+    """
+    if not topics:
+        return "None"
+    
+    if api_key:
+        # Use OpenAI API for topic classification
+        topics_str = ", ".join(topics)
+        prompt = f"Given the following topics: [{topics_str}], classify this comment into zero or more matching topics. Return a comma-separated list of matching topics, or 'None' if no match: '{comment}'"
+        
+        payload = {
+            "model": "gpt-3.5-turbo",
+            "messages": [{"role": "user", "content": prompt}]
+        }
+        result = call_openai_api(payload, api_key)
+        
+        if result and 'choices' in result:
+            try:
+                response = result['choices'][0]['message']['content'].strip()
+                if response.lower() == 'none':
+                    return "None"
+                # Validate that returned topics are in our list
+                returned_topics = [t.strip() for t in response.split(',')]
+                valid_topics = [t for t in returned_topics if t in topics]
+                return ", ".join(valid_topics) if valid_topics else "None"
+            except (KeyError, IndexError):
+                pass  # Fall through to keyword matching
+    
+    # Fallback to keyword matching (case-insensitive substring match)
+    comment_lower = comment.lower()
+    matching_topics = [topic for topic in topics if topic.lower() in comment_lower]
+    return ", ".join(matching_topics) if matching_topics else "None"
+
 # --- POWERPOINT GENERATION ---
 def create_gtm_presentation(data):
     """
@@ -215,6 +278,49 @@ def create_gtm_presentation(data):
     slide.shapes.title.text = "AI-Generated Overview"
     slide.placeholders[1].text_frame.text = data.get('overview_summary', 'Not generated.')
     
+    # --- Sentiment & Topic Analysis Slide ---
+    if 'df_result' in data:
+        slide = prs.slides.add_slide(content_slide_layout)
+        slide.shapes.title.text = "Sentiment & Topic Analysis"
+        
+        df_result = data['df_result']
+        tf = slide.placeholders[1].text_frame
+        tf.clear()
+        
+        # Add summary statistics
+        p = tf.add_paragraph()
+        p.text = f"Analysis of {len(df_result)} comments from {data.get('region', 'Unknown')}"
+        p.font.bold = True
+        
+        # Sentiment distribution
+        sentiment_counts = df_result['sentiment'].value_counts()
+        p = tf.add_paragraph()
+        p.text = "Sentiment Distribution:"
+        p.font.bold = True
+        for sentiment, count in sentiment_counts.items():
+            p = tf.add_paragraph()
+            p.text = f"• {sentiment.title()}: {count} comments"
+            p.level = 1
+        
+        # Topic distribution
+        all_topics = []
+        for topic_str in df_result['topic']:
+            if topic_str != "None":
+                all_topics.extend([t.strip() for t in topic_str.split(',')])
+        
+        if all_topics:
+            topic_counts = pd.Series(all_topics).value_counts()
+            p = tf.add_paragraph()
+            p.text = "Top Topics:"
+            p.font.bold = True
+            for topic, count in topic_counts.head(5).items():
+                p = tf.add_paragraph()
+                p.text = f"• {topic}: {count} mentions"
+                p.level = 1
+        else:
+            p = tf.add_paragraph()
+            p.text = "No topics were assigned to comments"
+    
     ppt_io = io.BytesIO()
     prs.save(ppt_io)
     ppt_io.seek(0)
@@ -284,7 +390,7 @@ if st.session_state.step > 0:
     st.sidebar.markdown(f"**Region:** {st.session_state.project_data.get('region', 'N/A')}")
     st.sidebar.markdown("---")
     
-    progress_value = st.session_state.step / 5 # Updated step count
+    progress_value = st.session_state.step / 6 # Updated step count to include new sentiment/topic step
     st.progress(progress_value)
 
     if st.sidebar.button("↩️ Start Over"):
@@ -325,9 +431,112 @@ if st.session_state.step == 2:
             next_step()
             st.rerun()
 
-# --- Step 3: Timeline Customization ---
+# --- Step 3: Sentiment & Topic Classification ---
 if st.session_state.step == 3:
-    st.header("Step 3: Timeline Customization")
+    st.header("Step 3: Sentiment & Topic Classification")
+    st.markdown("Upload comments for sentiment analysis and topic classification.")
+    
+    # Data input section
+    st.subheader("Data Input")
+    comments_input = st.text_area(
+        "Enter comments (one per line):", 
+        height=200, 
+        key="comments_input",
+        help="Paste your comments here, one comment per line"
+    )
+    
+    # Topic input section
+    st.subheader("Topic Definition")
+    topics_input = st.text_area(
+        "Enter topics/themes (one per line):",
+        height=150,
+        key="topics_input", 
+        help="Define the topics or themes you want to classify comments into"
+    )
+    
+    if st.button("Process Comments", type="primary", use_container_width=True):
+        if comments_input.strip():
+            comments = [c.strip() for c in comments_input.strip().split('\n') if c.strip()]
+            topics = [t.strip() for t in topics_input.strip().split('\n') if t.strip()] if topics_input.strip() else []
+            
+            # Initialize dataframe
+            df_result = pd.DataFrame()
+            df_result['region'] = [st.session_state.project_data.get('region', 'Unknown')] * len(comments)
+            df_result['comment'] = comments
+            
+            # Process sentiment classification
+            sentiments = []
+            with st.spinner("Classifying sentiment..."):
+                progress_bar = st.progress(0)
+                for i, comment in enumerate(comments):
+                    sentiment = classify_sentiment(comment, st.session_state.api_key)
+                    sentiments.append(sentiment)
+                    progress_bar.progress((i + 1) / len(comments))
+            
+            df_result['sentiment'] = sentiments
+            
+            # Process topic classification
+            topics_classified = []
+            if topics:
+                with st.spinner("Classifying topics..."):
+                    progress_bar = st.progress(0)
+                    for i, comment in enumerate(comments):
+                        topic = classify_topics(comment, topics, st.session_state.api_key)
+                        topics_classified.append(topic)
+                        progress_bar.progress((i + 1) / len(comments))
+            else:
+                topics_classified = ["None"] * len(comments)
+            
+            df_result['topic'] = topics_classified
+            
+            # Store results
+            st.session_state.project_data['df_result'] = df_result
+            st.session_state.project_data['topics'] = topics
+            
+            # Display results
+            st.subheader("Classification Results")
+            st.dataframe(df_result)
+            
+            # Summary statistics
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("Sentiment Distribution")
+                sentiment_counts = df_result['sentiment'].value_counts()
+                st.write(sentiment_counts)
+            
+            with col2:
+                st.subheader("Topic Distribution")
+                # Count topic occurrences (handle comma-separated values)
+                all_topics = []
+                for topic_str in df_result['topic']:
+                    if topic_str != "None":
+                        all_topics.extend([t.strip() for t in topic_str.split(',')])
+                topic_counts = pd.Series(all_topics).value_counts()
+                if not topic_counts.empty:
+                    st.write(topic_counts)
+                else:
+                    st.write("No topics assigned")
+        else:
+            st.error("Please enter some comments to process.")
+    
+    # Display existing results if available
+    if 'df_result' in st.session_state.project_data:
+        st.subheader("Current Results")
+        st.dataframe(st.session_state.project_data['df_result'])
+    
+    col1, col2, col3 = st.columns([1,1,1])
+    with col1: st.button("← Back: Insights", on_click=prev_step, use_container_width=True)
+    with col3:
+        if st.button("Save & Next: Timeline →", type="primary", use_container_width=True):
+            if 'df_result' in st.session_state.project_data:
+                next_step()
+                st.rerun()
+            else:
+                st.error("Please process comments before proceeding.")
+
+# --- Step 4: Timeline Customization ---
+if st.session_state.step == 4:
+    st.header("Step 4: Timeline Customization")
     st.markdown("Add your region-specific activations and milestones.")
     if 'regional_events' not in st.session_state.project_data:
         st.session_state.project_data['regional_events'] = []
@@ -340,16 +549,16 @@ if st.session_state.step == 3:
             st.rerun()
 
     col1, col2, col3 = st.columns([1,1,1])
-    with col1: st.button("← Back: Insights", on_click=prev_step, use_container_width=True)
+    with col1: st.button("← Back: Classification", on_click=prev_step, use_container_width=True)
     with col3:
         if st.button("Save & Next: Activations →", type="primary", use_container_width=True):
             st.session_state.project_data['timeline'] = st.session_state.project_data['regional_events']
             next_step()
             st.rerun()
 
-# --- Step 4: Activation Planning ---
-if st.session_state.step == 4:
-    st.header("Step 4: Activation Planning")
+# --- Step 5: Activation Planning ---
+if st.session_state.step == 5:
+    st.header("Step 5: Activation Planning")
     st.markdown("Plan your regional activation on a single slide.")
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -375,9 +584,9 @@ if st.session_state.step == 4:
             next_step()
             st.rerun()
 
-# --- Step 5: Final Review & Export ---
-if st.session_state.step == 5:
-    st.header("Step 5: Final Review & Export")
+# --- Step 6: Final Review & Export ---
+if st.session_state.step == 6:
+    st.header("Step 6: Final Review & Export")
     st.balloons()
     st.subheader("Investment Summary")
     st.markdown("Provide the regional investment details in CSV format.")
@@ -400,6 +609,31 @@ if st.session_state.step == 5:
     with st.spinner("AI is generating the final overview..."):
         overview_summary = get_ai_summary(full_text, st.session_state.api_key)
     st.text_area("Overview Summary", value=overview_summary, height=150, disabled=True)
+    
+    # Display sentiment and topic classification results if available
+    if 'df_result' in st.session_state.project_data:
+        st.subheader("Sentiment & Topic Classification Results")
+        df_result = st.session_state.project_data['df_result']
+        st.dataframe(df_result)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("**Sentiment Summary:**")
+            sentiment_counts = df_result['sentiment'].value_counts()
+            st.write(sentiment_counts)
+        
+        with col2:
+            st.write("**Topic Summary:**")
+            # Count topic occurrences
+            all_topics = []
+            for topic_str in df_result['topic']:
+                if topic_str != "None":
+                    all_topics.extend([t.strip() for t in topic_str.split(',')])
+            if all_topics:
+                topic_counts = pd.Series(all_topics).value_counts()
+                st.write(topic_counts)
+            else:
+                st.write("No topics assigned")
     
     if st.button("Generate & Download Presentation", type="primary", use_container_width=True):
         st.session_state.project_data['investment_data'] = investment_data
