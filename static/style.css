@@ -1,0 +1,88 @@
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #f7f8fa;
+    margin: 0;
+    padding: 0;
+}
+.container {
+    max-width: 900px;
+    margin: 40px auto;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+    padding: 32px 40px 40px 40px;
+}
+h1 {
+    color: #2d3a4a;
+    font-size: 2.2rem;
+    margin-bottom: 0.5em;
+}
+label, .section-title {
+    font-weight: 600;
+    color: #2d3a4a;
+    margin-top: 1.5em;
+    display: block;
+}
+input[type="file"], input[type="text"], select {
+    margin-top: 0.5em;
+    margin-bottom: 1.5em;
+    width: 100%;
+    padding: 0.7em;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 1rem;
+}
+button, .button {
+    background: #3b82f6;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 0.8em 2em;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 1em;
+    transition: background 0.2s;
+}
+button:hover, .button:hover {
+    background: #2563eb;
+}
+.step-list {
+    margin: 1em 0 2em 0;
+    padding: 0;
+    list-style: none;
+}
+.step-list li {
+    background: #f1f5f9;
+    border-radius: 6px;
+    padding: 0.7em 1em;
+    margin-bottom: 0.5em;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.step-list input, .step-list select {
+    width: auto;
+    margin: 0 0.5em;
+}
+.process-log {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 1em;
+    margin-top: 2em;
+    font-size: 1rem;
+    color: #374151;
+    max-height: 300px;
+    overflow-y: auto;
+}
+.success {
+    color: #16a34a;
+    font-weight: bold;
+    margin-top: 1.5em;
+}
+.error {
+    color: #dc2626;
+    font-weight: bold;
+    margin-top: 1.5em;
+}

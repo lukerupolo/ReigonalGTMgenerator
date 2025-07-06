@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dynamic AI Presentation Assembler</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Dynamic AI Presentation Assembler</h1>
+        <form id="upload-form" enctype="multipart/form-data">
+            <label>1. OpenAI API Key</label>
+            <input type="text" id="api_key" name="api_key" placeholder="Enter your OpenAI API Key" required>
+
+            <label>2. Upload Template Documents (PPTX/PDF)</label>
+            <input type="file" id="template_files" name="template_files" multiple required accept=".pptx,.pdf">
+
+            <label>3. Upload GTM Global Document (PPTX/PDF/Audio)</label>
+            <input type="file" id="gtm_file" name="gtm_file" required accept=".pptx,.pdf,.mp3,.wav,.m4a,.ogg,.flac">
+            <small style="color:#64748b;">You can upload a GTM PowerPoint, PDF, or an audio file (meeting recording or transcript audio).</small>
+
+            <label class="section-title">4. Define Presentation Structure</label>
+            <ul class="step-list" id="structure-list"></ul>
+            <button type="button" id="add-step">Add New Step</button>
+            <button type="button" id="clear-steps" style="background:#e5e7eb;color:#374151;">Clear Structure</button>
+
+            <button type="submit" class="button">🚀 Assemble Presentation</button>
+        </form>
+        <div id="process-log" class="process-log" style="display:none;"></div>
+        <div id="success-message" class="success" style="display:none;"></div>
+        <div id="error-message" class="error" style="display:none;"></div>
+    </div>
+    <script src="/static/main.js"></script>
+</body>
+</html>
